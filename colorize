@@ -1,0 +1,90 @@
+#!/bin/bash
+#	Copyright(c) 2012 RubytotheRails.com
+#	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
+#	Copyright and License URL must be included for any distribution
+
+#Add this to your script for colorization
+: <<'API-COPY'
+function paint { echo $2; }
+function colorOn { echo -n; }
+function colorOff { echo -n; }
+[[ -f "$(dirname $0)/colorize" ]] && source "$(dirname $0)/colorize"
+API-COPY
+
+COLORIZE_VERSION=1.3
+#if [[ $1 == "--version" ]]; then
+#  echo $COLORIZE_VERSION; exit;
+#fi
+
+function colorcode {
+	color=$1
+	CODE=
+  case $color in
+    red|--red) CODE=31m ;;
+    lred|lightred|--red) CODE=1\;31m ;;
+    green|--green) CODE=0\;32m ;;
+    lgreen|lightgreen|--lgreen) CODE=1\;32m ;;
+    brown|--brown) CODE=0\;33m ;;
+    yellow|--yellow) CODE=1\;33m ;;
+    blue|--blue) CODE=34m ;;
+    lblue|lightblue|--blue) CODE=1\;34m ;;
+    orange|--orange) CODE=38\;5\;208m ;;
+    purple|--purple) CODE=35m ;;
+    lpurple|lightpurple|--purple) CODE=1\;35m ;;
+    pink|--pink) CODE=38\;5\;210m;;
+    black|--black) CODE=30m ;;
+    dgray|darkgray|--dgray) CODE=1\;30m ;;
+    lgray|lightgray|--lgray) CODE=37m ;;
+    white|--white) CODE=1\;37m ;;
+    cyan|--cyan) CODE=36m ;;
+    lcyan|lightcyan|--lcyan) CODE=1\;36m ;;
+    none|*) CODE=00m ;;
+  esac
+  echo $CODE
+}
+
+function colorOn {
+	color=$1
+	echo -n -e "\e[$(colorcode $color)"
+}
+
+function colorOff {
+	echo -n -e "\e[$(colorcode none)"
+}
+
+function paint {
+  PAINTTEXT=
+  COLORCODE=
+  PAINTFIRST=
+  for arg in $@; do
+  	if [[ -z $PAINTFIRST ]]; then
+  		COLORCODE=$(colorcode $arg)
+  		PAINTFIRST=done
+  	else
+ 			[[ -z $PAINTTEXT ]] && PAINTTEXT=$arg || PAINTTEXT="$PAINTTEXT $arg"
+		fi
+  done
+  [[ -z $COLORCODE ]] && echo $PAINTTEXT || echo -e "\e[$COLORCODE$PAINTTEXT\e[00m"
+}
+
+function colorize_test {
+	paint red "red"
+	paint lred "lightred"
+	paint yellow "yellow"
+	paint brown "brown"
+	paint orange "orange"
+	paint green "green"
+	paint lgreen "lightgreen"
+	paint blue "blue"
+	paint lblue "lightblue"
+	paint cyan "cyan"
+	paint lcyan "lightcyan"
+	paint purple "purple"
+	paint lpurple "lightpurple"
+	paint pink "pink"
+	paint black "black"
+	paint dgray "darkgray"
+	paint lgray "lightgray"
+	paint white "white"
+}
+

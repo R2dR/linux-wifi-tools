@@ -1,0 +1,8 @@
+#!/bin/bash
+#	Copyright(c) 2012 RubytotheRails.com
+#	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
+#	Copyright and License URL must be included for any distribution
+
+WMOD_VERSION=1.0
+[[ $1 == "--version" ]] && { echo $WMOD_VERSION; exit; }
+basename $( sudo readlink /sys/class/net/wlan0/device/driver )

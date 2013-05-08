@@ -1,0 +1,147 @@
+#!/bin/bash
+#	Copyright(c) 2012 RubytotheRails.com
+#	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
+#	Copyright and License URL must be included for any distribution
+
+WSCAN_VERSION=2.44
+DIR=~/.wscan
+mkdir $DIR 2>/dev/null
+FILENAME=$DIR/raw
+RESULT=$DIR/output
+CONFIG=$DIR/config
+
+function save_config {
+	echo "COLOR_ENABLED=$COLOR_ENABLED" > $CONFIG
+	echo "#Signal Quality Cutoff Percentages (High, Med, Low)" >> $CONFIG
+	echo -e "HQ=$HQ\nMQ=$MQ\nLQ=$LQ" >> $CONFIG
+	echo "#Signal Quality Cutoff Color Codes (High, Med, Low, Poor)" >> $CONFIG
+	echo "HQC=\"$HQC\"" >> $CONFIG
+	echo "MQC=\"$MQC\"" >> $CONFIG
+	echo "LQC=\"$LQC\"" >> $CONFIG
+	echo "PQC=\"$PQC\"" >> $CONFIG
+}
+
+COLOR_ENABLED=y
+HQ=60
+MQ=50
+LQ=40
+HQC="1;32"
+MQC="1;33"
+LQC="38;5;208"
+PQC="0;31"
+
+if [[ -e $CONFIG ]]; then
+	source $CONFIG
+else
+	save_config
+fi
+
+function paint { echo $2; }
+function colorOn { echo -n; }
+function colorOff { echo -n; }
+[[ -f $(dirname $0)/colorize ]] && source "$(dirname $0)/colorize"
+
+function grepscan {
+  cat $FILENAME |
+    grep -oP 'ESSID:"\K[^"]*' |
+    sort
+}
+
+function sortscan3 {
+	COLORCODING="{printf \"%s\\t%s\\n\", \$0, (\$2>$HQ?\"$HQC\":(\$2>$MQ?\"$MQC\":(\$2>$LQ?\"$LQC\":\"$PQC\")))}"
+  cat $FILENAME |
+  #discard lines without desired information
+    grep -E '(ESSID|dBm|Encryption|Mode)' |
+  #gleen data values
+    sed -re 's/.*Quality=([0-9]+).*Signal level=(-[0-9]+).*/,\2\t\1/' |
+    sed -re 's/.*Encryption key:([a-z]+).*/\1/' |
+    sed -re 's/.*ESSID:"([^"]*).*/\1/' |
+    sed -re 's/.*Mode:\s*(\w+)/\1/' |
+  #group related data into lines - using comma as line delimiter
+    tr '\n' '\t' |
+    sed -e "s/^,//;s/\t,/\n/g;s/\t$//" |
+  #keep only valid lines
+#    grep -E '[0-9]+\s[0-9]+\s[a-z]+\s[^\s]+\s[^\s]+' |
+  #remove duplicate wifi names and sort by signal strength
+    sort -nr -k2 |
+    sort -t$'\t' $UNIQUE -k4 |
+    sort -nr -k2 |
+  #data conversion: encryption (on/off), mode (Master/ad-hoc) and quality percentage calculation
+    sed -re 's/\toff\t/\t \t/g' | sed -re 's/\ton\t/\t\*\t/g' |
+    sed -re 's/\tMaster/\t /gi' | sed -re 's/\tAd-Hoc/\t!/gi' |
+    awk -F'\t' '{printf "%s\t%.0f\t%s\t%s\t%s\n", $1, ($2*100/70), $3, $4, $5}' |
+  #add coloring
+  	awk -F'\t' "$COLORCODING" |
+  #line format
+		awk -F'\t' "$FINALFORMAT" |
+    cat > $RESULT
+    [[ -s $RESULT ]] && cat $RESULT || echo "No wifis available"
+}
+
+function usage {
+  echo "sorts wifi hosts by signal strength and quality"
+  echo "" 
+  echo "  -r,  --refresh   refresh scan, no output"
+  echo "  -a,  --all       do not remove duplicates"
+  echo "       --raw       show raw output"
+  echo "       --less      less raw output"
+  echo "       --list      list wifi names"
+  echo "  -nc, --no-color  no color"
+  echo "  -h,  --help"
+  echo ""
+}
+
+USECOLOR=
+[[ $COLOR_ENABLED ]] && USECOLOR=y
+UNIQUE="-u"
+RAW=
+LESS=
+LIST=
+FINALFORMAT='{printf "\033[%sm>> (%sdBm|%s%) %s%s %s\n", $6, $1, $2, $3, $5, $4}'
+HEADINGCOLOR=green
+
+for arg in $@; do
+  case $arg in
+  	-h|--help) usage; exit ;;
+  	--version) echo $WSCAN_VERSION; exit ;;
+  	-r|--refresh)
+    	sudo touch $DIR/.touch  #just to check superuser before we send to background
+    	if [[ "$?" != "0" ]]; then
+    		exit
+    	fi
+    	sudo iwlist wlan0 scan > /dev/null &
+    	echo "Refreshing wireless hosts"
+    	echo ""
+    	exit
+  	;;
+  	-nc|--no-color) USECOLOR=; HEADINGCOLOR=none ;;
+  	--raw) RAW=y ;;
+  	--less|--rawless) LESS=y; RAW=y ;;
+  	--list) LIST=y ;;
+  	-a|--all) UNIQUE= ;;
+  esac
+done
+
+
+if [[ $USECOLOR ]]; then
+	paint $HEADINGCOLOR "Scanning wireless hosts..."
+else
+	echo "Scanning wireless hosts..."
+fi
+
+sudo iwlist wlan0 scan > $FILENAME
+if [[ $LESS ]]; then
+	less $FILENAME
+elif [[ $RAW ]]; then
+	cat $FILENAME
+elif [[ $LIST ]]; then
+  grepscan
+elif [[ $USECOLOR ]]; then
+  colorOn yellow
+  sortscan3
+  colorOff
+else
+	FINALFORMAT='{printf ">> (%s dBm/%s%) %s%s %s\n", $1, $2, $3, $5, $4}'
+	sortscan3
+fi
+

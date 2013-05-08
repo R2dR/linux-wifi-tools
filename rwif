@@ -1,0 +1,52 @@
+#!/bin/bash
+#	Copyright(c) 2012 RubytotheRails.com
+#	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
+#	Copyright and License URL must be included for any distribution
+
+RWIF_VERSION=1.2
+DIR=~/.rwif
+mkdir $DIR 2> /dev/null
+
+function paint { echo $2; }
+function colorOn { echo -n; }
+function colorOff { echo -n; }
+[[ -f $(dirname $0)/colorize ]] && source "$(dirname $0)/colorize"
+
+function usage {
+	echo "Reset wifi utility"
+	echo "rwif [OPTIONS]"
+	echo ""
+	echo "  -q, --quiet  no output"
+	echo "  -h, --help"
+	echo "      --version"
+	echo ""
+}
+
+QUIET=
+VERBOSE=
+case $1 in
+  -h|--help) colorOn yellow; usage; colorOff; exit ;;
+  -q|--quiet) QUIET=y; VERBOSE= ;;
+  -v|--verbose) QUIET=; VERBOSE=y ;;
+  --version) echo $RWIF_VERSION; exit ;;
+esac
+
+type wmod >/dev/null 2>&1 || { echo "Cannot proceed: 'wmod' command is required and not available."; echo ""; exit 1; }
+
+DRIVER=`wmod`
+if [[ $VERBOSE ]]; then
+	sudo killall nm-applet
+	sudo modprobe -v -r $DRIVER
+	sudo modprobe -v $DRIVER
+	nohup nm-applet >$DIR/nohup.out 2>&1 &
+else
+	sudo killall nm-applet 2>/dev/null
+	sudo modprobe -r $DRIVER
+	sudo modprobe $DRIVER
+	nohup nm-applet >$DIR/nohup.out 2>/dev/null &
+fi
+if [[ -z $QUIET ]]; then
+	echo "reloading $DRIVER wlan module"
+	echo ""
+fi
+

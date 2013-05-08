@@ -1,0 +1,286 @@
+#!/bin/bash
+#	Copyright(c) 2012 RubytotheRails.com
+#	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
+#	Copyright and License URL must be included for any distribution
+
+WIFIUTIL_VERSION=2.1
+DIR=~/.wifi
+mkdir $DIR 2>/dev/null
+tmpfile=$DIR/.tmpfile
+
+function clear_tmpfile {
+	rm -f $tmpfile 2>/dev/null
+}
+
+function paint { echo $2; }
+function colorOn { echo -n; }
+function colorOff { echo -n; }
+[[ -f $(dirname $0)/colorize ]] && source "$(dirname $0)/colorize"
+
+
+function usage {
+  echo "Wifi status"
+  echo "Usage: wifi [COMMAND]"
+  echo ""
+  echo "  gateway [g]  return the gateway ip address"
+  echo "  reload [r]   reload/refresh wifi driver (reset)"
+  echo "  scan [s]     scan wifis"
+  echo "  dns  [n]     retrieve name servers"
+  echo "  others [o]   scan other users on the wlan"  
+  echo "  dup [d]      check for duplicate ip on wlan"
+  echo "  ip           wireless ip address"
+  echo "  ping [p]     ping various associated IPs"
+  echo "                  0) gateway, 1) dns1, 2) dns2..."
+  echo "  check [c]    run connection diagnostic check"
+  echo "  help [h]     help"
+  echo ""
+}
+function color_usage {
+	colorOn yellow
+	usage
+	colorOff
+}
+
+function gateway_ip {
+  route -n | grep "^0.0.0.0" | tr -s ' ' | cut -f2 -d ' '
+}
+
+function wping {
+  check_connected
+
+  PING_IP=
+  PING_INSTRUCTION=
+  case $1 in
+    1|dns1) PING_IP=`name_servers | sed -n 1p`; PING_INSTRUCTION=DNS1 ;;
+    2|dns2) PING_IP=`name_servers | sed -n 2p`; PING_INSTRUCTION=DNS2 ;;
+    *)
+      PING_INSTRUCTION=GATEWAY
+      PING_IP=`gateway_ip`
+    ;;
+  esac
+  echo "Pinging $PING_INSTRUCTION address $PING_IP..."
+  ping -n -c 4 -i 0.4 $PING_IP
+}
+
+function signal {
+  iwconfig wlan0 | grep -Po "Signal level=\K.*" | sed -re 's/\s+$//'
+}
+
+function bitrate {
+	iwconfig wlan0 | grep -Po "Bit Rate=\K[0-9]+ Mb/s"
+}
+
+function linkquality {
+  iwconfig wlan0 | grep -Po "Link Quality=\K[0-9]+/70" | awk '{printf "%.0f", ($0*100/70)}'
+}
+
+function essid {
+  iwconfig wlan0 | grep -Po "ESSID:\"\K[^\"]+"
+}
+
+function macaddress {
+	ifconfig wlan0 | grep -Po "HWaddr \K[a-fA-F0-9:]+"
+}
+
+function ip {
+  ifconfig wlan0 | grep -Po "inet addr:\K([0-9]{1,3}\.){3}[0-9]{1,3}"
+}
+
+function conflicting_macaddress {
+	arping -D -I wlan0 -c 2 `ip` | grep -Po "\[\K[a-fA-F0-9:]+"
+}
+
+function dup_check {
+  check_connected
+
+  echo "Checking for duplicate ip (`ip`)..."
+  MACADDRESS=$(conflicting_macaddress)
+	[[ $MACADDRESS ]] && echo "Duplicate found!! - MAC:[$MACADDRESS]" || echo "No duplicate"
+#  arping -D -q -I wlan0 -c 2 `ip`
+#  [[ "$?" == "0" ]] && echo "No duplicate" || echo "Duplicate IP found"
+}
+
+function scan_others {
+  check_connected
+
+#  sudo arp-scan -I wlan0 --localnet | grep -vi "DUP:"
+  sudo arp-scan -I wlan0 --localnet
+}
+
+function check_connected {
+  if [[ -z `ip` ]]; then
+    paint yellow "Not connected or no IP assigned"
+    echo ""; exit 0
+  fi
+}
+
+function name_servers {
+  if [[ -f /var/lib/dhcp/dhclient.leases ]]; then
+    cat /var/lib/dhcp/dhclient.leases | grep -Po "name-servers\K.*" | sed 's/;$//g' | tr -d ' ' | tr -s ',' '\n'
+  fi
+}
+
+function reset_wifi {
+	type rwif >/dev/null 2>&1 || { paint red "Aborting reset: Required 'rwif' command is not installed."; echo ""; exit 1; }
+	rwif
+	exit 0;
+}
+
+function scan_wifis {
+  type wscan >/dev/null 2>&1 || { paint red "Aborting scan: Required 'wscan' command is not installed."; echo ""; exit 1; }
+  wscan
+}
+
+function grep_received_packets {
+	file=$1
+	cat $file | grep 'received' | sed -re "s/.*([0-9]) received.*/\1/"
+}
+
+function grep_packet_loss_percentage {
+	file=$1
+	cat $file | grep "packet loss" | cut -d' ' -f6 | sed "s/%//g"
+}
+
+function check_wifi {
+	if [[ $QUICK ]]; then
+		paint green "STARTING: Wifi diagnostic QUICK check"
+		paint green "  (run 'wifi check --all' for all tests)"
+	else
+		paint green" STARTING: Wifi diagnostic check"
+	fi
+	echo ""
+	# check wifi radio connection
+	paint white "Checking..."
+	paint yellow "1. Wifi radio connection..."
+	[[ -z $QUICK ]] && sleep 1
+	ESSID=$(essid)
+	if [[ -z $ESSID || $ESSID =~ off/any ]]; then
+		paint red "  PROBLEM: Wifi is not connected or radio is OFF"
+		paint red "    Hints: Make sure the wifi radio is ON and a wifi has been selected"
+		echo ""; exit 1;
+	else
+		paint green "  OK: Wifi is connected to '$ESSID' at bit rate `bitrate`"
+	fi
+	# todo: warnings for low quality and signal strength
+	# check wifi address
+	paint yellow "2. Localhost IP address..."
+	[[ -z $QUICK ]] && sleep 1
+	IP=$(ip)
+	if [[ -z $IP ]]; then
+		paint red "  PROBLEM: No IP address has been assigned to the localhost for this wifi."
+		paint red "    Hints: Make sure this host is configured for DHCP.  Reboot wireless router."
+		echo ""; exit 1;
+	else
+		paint green "  OK: IP address ($IP) is assigned"
+	fi
+	INDEX=3
+	# check ip duplications
+	if [[ -z $QUICK ]]; then
+		paint yellow "$INDEX. Duplicate IP addresses..."
+		INDEX=$(($INDEX+1))
+		sleep 1
+		MACADDRESS=$(conflicting_macaddress)
+  	if [[ $MACADDRESS ]]; then
+  		paint orange "  WARNING: Another device responded to your IP address - degrades response times."
+  		paint orange "    Hints: Reboot wireless router and reconnect to wifi or use a different wifi"
+  	else
+  		paint green "  OK: No duplicate IP address"
+  	fi
+  fi
+	# check tcp/ip stack
+	if [[ -z $QUICK ]]; then
+		paint yellow "$INDEX. Local network stack..."
+		INDEX=$(($INDEX+1))
+		ping -n -i 0.3 -c 6 localhost > $tmpfile
+		LOSS=$(grep_packet_loss_percentage $tmpfile)
+		if [[ $LOSS == "100" ]]; then
+			paint red "  PROBLEM: Unable to reach localhost. Something wrong with local network stack"
+			paint red "    Hints: Reboot your machine?"; echo ""; exit 1;
+		elif [[ $LOSS != "0" ]]; then
+			paint orange "  WARNING: Local network stack is responding, but some attempts failed ($LOSS%)"
+		else
+			paint green "  OK: Local network stack responding"
+		fi
+	fi
+	# check ping to gateway
+	paint yellow "$INDEX. Wireless router IP address..."
+	INDEX=$(($INDEX+1))
+	[[ -z $QUICK ]] && sleep 1
+	GATEWAYIP=$(gateway_ip)
+	if [[ -z $GATEWAYIP ]]; then
+		paint red "  PROBLEM: No IP for wireless router"
+		echo ""; exit 1;
+	else
+		paint green "  OK: Wireless router located at IP address $GATEWAYIP"
+	fi
+	paint yellow "$INDEX. Access to wireless router ..."
+	INDEX=$(($INDEX+1))
+	ping -n -i 0.3 -c 6 $GATEWAYIP > $tmpfile
+	LOSS=$(grep_packet_loss_percentage $tmpfile)
+	if [[ $LOSS == "100" ]]; then
+	  paint red "  PROBLEM: Unable to reach wireless router"
+	  paint red "    Hints: Try reconnecting to router and/or rebooting wireless router"
+	  echo ""; exit 1;
+	elif [[ $LOSS != "0" ]]; then
+		paint orange "  WARNING: Wireless router is reachable, but some attempts failed ($LOSS%)"
+	else
+		paint green "  OK: Wireless router is reachable"
+	fi
+	# check outer connectivity - ping ip address
+	OUTERDOMAIN="yahoo.com"
+	OUTERIP=98.138.253.109
+	#OUTERDOMAIN="weibo.com"
+	#OUTERIP=114.134.80.161
+	paint yellow "$INDEX. Access to Internet IP address ($OUTERIP)..."
+	INDEX=$(($INDEX+1))
+	ping -n -i 0.3 -c 6 $OUTERIP > $tmpfile
+	LOSS=$(grep_packet_loss_percentage $tmpfile)
+	if [[ $LOSS == "100" ]]; then
+		paint red "  PROBLEM: Internet is not reachable via wireless router"
+		paint red "    Hints: Reboot wireless router"
+		echo ""; exit 1;
+	elif [[ $LOSS != "0" ]]; then
+		paint orange "  WARNING: Internet is reachable, but some attempts failed ($LOSS%)"	
+	else
+		paint green "  OK: Internet is reachable"
+	fi
+	# check dns - ping to yahoo.com (politically uncontraversial address)
+	paint yellow "$INDEX. Access to Internet via DNS ($OUTERDOMAIN)..."
+	INDEX=$(($INDEX+1))
+	ping -n -i 0.3 -c 6 $OUTERDOMAIN > $tmpfile
+	LOSS=$(grep_packet_loss_percentage $tmpfile)
+	if [[ $LOSS == "100" ]]; then
+		paint red "  PROBLEM: Internet is not reachable with DNS"
+		paint red "    Hints: A problem with the DNS or DHCP system/firmware. DNS may be temporarily unavailable or try rebooting wireless router"
+		echo ""; exit 1;
+	elif [[ $LOSS != "0" ]]; then
+		paint orange "  WARNING: DNS is working, but some attempts failed ($LOSS%)"	
+	else
+		paint green "  OK: Internet is reachable via DNS"
+	fi
+}
+QUICK=y
+case $1 in
+  h | help ) color_usage ;;
+  --version) echo $WIFIUTIL_VERSION; exit ;;
+  p | ping ) wping $2 ;;
+  r | reload | restart | reset) reset_wifi ;;
+  g | gateway ) gateway_ip ;;
+  d | dup | duplicate )  dup_check ;;
+  n | dns ) name_servers ;;
+  o | other | others ) scan_others ;;
+  c | check )
+  	[[ $2 == "-a" || $2 == "--all" ]] && QUICK=
+  	check_wifi
+  ;;
+  ip ) ip ;;
+  s | scan ) scan_wifis ;;
+  '' )
+    check_connected
+    paint green "Connected to '`essid`' (`ip`) at `signal`, `bitrate`, Q(`linkquality`%)"
+  ;;
+  *) color_usage ;;
+esac
+
+echo ""
+
