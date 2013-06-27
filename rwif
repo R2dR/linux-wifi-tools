@@ -3,7 +3,7 @@
 #	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
 #	Copyright and License URL must be included for any distribution
 
-RWIF_VERSION=1.2
+RWIF_VERSION=1.3
 DIR=~/.rwif
 mkdir $DIR 2> /dev/null
 
@@ -34,6 +34,14 @@ esac
 type wmod >/dev/null 2>&1 || { echo "Cannot proceed: 'wmod' command is required and not available."; echo ""; exit 1; }
 
 DRIVER=`wmod`
+if [[ -z $DRIVER ]]; then
+	if [[ -z $QUIET ]]; then
+	  paint orange "Wireless driver module not identified"
+	  echo
+	fi
+	exit 1 
+fi
+
 if [[ $VERBOSE ]]; then
 	sudo killall nm-applet
 	sudo modprobe -v -r $DRIVER

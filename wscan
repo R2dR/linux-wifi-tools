@@ -3,7 +3,7 @@
 #	This is free software distributed per the MIT License at www.r2dr.com/licenses/commands
 #	Copyright and License URL must be included for any distribution
 
-WSCAN_VERSION=2.44
+WSCAN_VERSION=2.5
 DIR=~/.wscan
 mkdir $DIR 2>/dev/null
 FILENAME=$DIR/raw
@@ -91,6 +91,10 @@ function usage {
   echo ""
 }
 
+function ifwireless {
+	iw dev | grep -Po "Interface \K[^\s]+"
+}
+
 USECOLOR=
 [[ $COLOR_ENABLED ]] && USECOLOR=y
 UNIQUE="-u"
@@ -109,7 +113,7 @@ for arg in $@; do
     	if [[ "$?" != "0" ]]; then
     		exit
     	fi
-    	sudo iwlist wlan0 scan > /dev/null &
+    	sudo iwlist `ifwireless` scan > /dev/null &
     	echo "Refreshing wireless hosts"
     	echo ""
     	exit
@@ -129,7 +133,7 @@ else
 	echo "Scanning wireless hosts..."
 fi
 
-sudo iwlist wlan0 scan > $FILENAME
+sudo iwlist `ifwireless` scan > $FILENAME
 if [[ $LESS ]]; then
 	less $FILENAME
 elif [[ $RAW ]]; then
