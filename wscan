@@ -101,7 +101,7 @@ UNIQUE="-u"
 RAW=
 LESS=
 LIST=
-FINALFORMAT='{printf "\033[%sm>> (%sdBm|%s%) %s%s %s\n", $6, $1, $2, $3, $5, $4}'
+FINALFORMAT='{printf "\033[%sm>> (%sdBm|%s%%) %s%s %s\n", $6, $1, $2, $3, $5, $4}'
 HEADINGCOLOR=green
 
 for arg in $@; do
@@ -145,7 +145,7 @@ elif [[ $USECOLOR ]]; then
   sortscan3
   colorOff
 else
-	FINALFORMAT='{printf ">> (%s dBm/%s%) %s%s %s\n", $1, $2, $3, $5, $4}'
+	FINALFORMAT='{printf ">> (%s dBm/%s%%) %s%s %s\n", $1, $2, $3, $5, $4}'
 	sortscan3
 fi
 
